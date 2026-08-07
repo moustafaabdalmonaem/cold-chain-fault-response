@@ -1,0 +1,287 @@
+{
+  "name": "Cold Chain Fault Response Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fault-signal",
+        "options": {}
+      },
+      "name": "01 Fault Arrives",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -896,
+        128
+      ],
+      "id": "9dc40a0f-3ac8-45ff-8fce-96a0c6ce36cd",
+      "webhookId": "15226552-6213-45f6-8916-6c18a440271f"
+    },
+    {
+      "parameters": {
+        "functionCode": "const fault = $input.first().json;\nconst map = {\n  'ERR_TEMP_HIGH': { cat: 'Temperature Excursion', action: 'RESET_COOLING_UNIT', auto: true },\n  'ERR_DOOR_OPEN': { cat: 'Door Seal Breach', action: 'SEND_DOOR_ALERT', auto: true },\n  'ERR_COMP_FAIL': { cat: 'Compressor Failure', action: 'ESCALATE', auto: false },\n  'ERR_POWER_SURGE': { cat: 'Power Surge', action: 'ESCALATE', auto: false },\n  'ERR_CONN_LOST': { cat: 'Connectivity Lost', action: 'RESTART_MODULE', auto: true }\n};\nconst r = map[fault.faultCode] || { cat: 'Unknown', action: 'ESCALATE', auto: false };\nreturn [{\n  json: {\n    ...fault,\n    faultCategory: r.cat,\n    recommendedAction: r.action,\n    autoResolvable: r.auto\n  }\n}];"
+      },
+      "name": "02 Classify the Fault",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        128
+      ],
+      "id": "89361375-5dd6-4bec-9214-7e6219b60776"
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "sheetId": "Cold Chain Knowledge Base",
+        "range": "Resolution_Playbook",
+        "lookupColumn": "fault_code",
+        "lookupValue": "=",
+        "options": {}
+      },
+      "name": "03 Retrieve Playbook",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        128
+      ],
+      "id": "579dc94e-0fa9-4883-adbb-29ac9d77f01b"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.autoResolvable }}",
+              "value2": true
+            }
+          ],
+          "string": [
+            {
+              "value1": "={{ $json.severity }}",
+              "operation": "notEqual",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "name": "04 Can We Fix It?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        128
+      ],
+      "id": "7b6c49d2-14c9-4ca3-b32d-5c9b02521560"
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "=https://api.meridian-iot.com/devices/{{ $json.deviceId }}/remediate",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={\n  \"command\": \"{{ $json.recommendedAction }}\",\n  \"issuedBy\": \"n8n-auto\"\n}"
+      },
+      "name": "05A Apply the Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "24ad98f2-d057-45ef-853a-3a964e29ca8d"
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "name": "06A Wait 60s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "76821ca8-efa8-4aba-82d5-cb3dbfd06a3a",
+      "webhookId": "22aa095a-e810-4727-9219-97d194119c8b"
+    },
+    {
+      "parameters": {
+        "functionCode": "const d = $input.first().json;\nconst brief = [\n  'COLD CHAIN ALERT - ESCALATION REQUIRED',\n  `Device: ${d.deviceId} (${d.deviceType})`,\n  `Location: ${d.location}`,\n  `Fault Code: ${d.faultCode} - ${d.faultCategory}`,\n  `Temperature: ${d.currentTemp}°C (target ${d.targetTemp}°C)`,\n  `Severity: ${d.severity ? d.severity.toUpperCase() : 'UNKNOWN'}`,\n  `Raised at: ${d.timestamp}`,\n  `ACTION: ${d.recommendedAction}`,\n  `NOTES: ${d.resolution_notes || 'See playbook'}`,\n  '',\n  'This alert was raised autonomously. No automated fix was applied.'\n].join('\\n');\nreturn [{ json: { ...d, escalationBrief: brief } }];"
+      },
+      "name": "05B Compose Brief",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        0,
+        240
+      ],
+      "id": "0f0eaf1b-5a7a-41de-8b46-2e7cb859a2fc"
+    },
+    {
+      "parameters": {},
+      "name": "07 Merge Paths",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        464,
+        128
+      ],
+      "id": "b489e803-c3ac-4846-96be-efc525a1240f"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "Cold Chain Knowledge Base",
+        "range": "Incident_Log",
+        "options": {}
+      },
+      "name": "07 Log the Incident",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        672,
+        128
+      ],
+      "id": "27a5110f-6c86-459a-9ffa-31e533573323"
+    },
+    {
+      "parameters": {
+        "subject": "=Fault Notification: {{ $json.deviceId }} ({{ $json.faultCode }})",
+        "message": "={{ $json.escalationBrief || 'Device restored to normal range.' }}",
+        "additionalFields": {}
+      },
+      "name": "08 Notify",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        896,
+        128
+      ],
+      "id": "2ef4bc93-4dda-410d-ba9b-e53364d25c81"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "01 Fault Arrives": {
+      "main": [
+        [
+          {
+            "node": "02 Classify the Fault",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 Classify the Fault": {
+      "main": [
+        [
+          {
+            "node": "03 Retrieve Playbook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 Retrieve Playbook": {
+      "main": [
+        [
+          {
+            "node": "04 Can We Fix It?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "04 Can We Fix It?": {
+      "main": [
+        [
+          {
+            "node": "05A Apply the Fix",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "05B Compose Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05A Apply the Fix": {
+      "main": [
+        [
+          {
+            "node": "06A Wait 60s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "06A Wait 60s": {
+      "main": [
+        [
+          {
+            "node": "07 Merge Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05B Compose Brief": {
+      "main": [
+        [
+          {
+            "node": "07 Merge Paths",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "07 Merge Paths": {
+      "main": [
+        [
+          {
+            "node": "07 Log the Incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "07 Log the Incident": {
+      "main": [
+        [
+          {
+            "node": "08 Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e5c8bb4c-1838-42fb-ad3e-d2a3018828ff",
+  "meta": {
+    "instanceId": "d81e001e9d59947a771f174989353dc32d72525ea939391fa8cdf98b8208fb81"
+  },
+  "nodeGroups": [],
+  "id": "B72sfnmTbOPfO0GH",
+  "tags": []
+}
