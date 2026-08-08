@@ -44,3 +44,4 @@ An autonomous IoT monitoring and remediation workflow built with n8n. Designed f
   "timestamp": "2026-07-10T09:14:22Z"
 }
 ```
+<img width="1280" height="636" alt="Workflow 3" src="https://github.com/user-attachments/assets/19f56c1d-7468-49d0-a93a-feee88d4c110" />
